@@ -27,26 +27,25 @@ abunds=np.zeros((nt_abunds, np_abunds, nspecies)) #temperature,pressure,species
 P_abunds=np.zeros((nt_abunds, np_abunds)) #in mbar
 T_abunds=np.zeros((nt_abunds, np_abunds))
 
-# ........ Read in abundances file .........
+# ........ Read in list of species from abundances file .........
 abundsfile=open('m+0.0_co1.0.data.11/full_abunds.txt','r')
-header=abundsfile.readline()
-
+species=abundsfile.readline()
+species = species.split(' ')
 for i in range(nt_abunds):
     for j in range(ncp[i]):
-        line=abundsfile.readline()
+        line = abundsfile.readline()
         newline = line.strip()
-        abunds[i,j,:]= newline.split('  ')
+        abunds[i,j,:] = newline.split('  ')
 abundsfile.close()
 
 #%% ............ Read in pressure temperature grid .............
 ptfile=open('PT_list_all.txt','r')
-
 data = np.loadtxt(ptfile,skiprows=1)
 layers  = (data[:,0])
 nL = len(layers)
 print("number of layers: ", nL)
-
 ptfile.close()
+
 ptfile=open('PT_list_all.txt','r')
 header=ptfile.readline()
 
@@ -59,9 +58,8 @@ ptfile.close()
 
 # ......... Read abundances file again as a 1D array ..........
 abundsfile=open('m+0.0_co1.0.data.11/full_abunds.txt','r')
-VMR_1D = np.zeros((nL,nspecies))
 data = np.loadtxt(abundsfile,skiprows=1)
-VMR_1D = data[:,:]
+VMR_2D = data[:,:]
 
 # ..........Extract mu at each P and T .........................
 ptfile = 'm+0.0_co1.0.data.11/cp_all'
@@ -78,66 +76,12 @@ P_filtered = []
 
  # Create a dataframe from the temp, pressure, mu table
 df = pd.DataFrame({'pressure':P_1D, 'temperature':T_1D, 'mu':mu_1D})
-print(df['pressure'])
-
-# convert 1D to 3D arrays
-VMR = np.zeros((nL, nL, nspecies))
-mu_15 = np.zeros((1,15))
-mu_16 = np.zeros((1,16))
-mu_17 = np.zeros((15,17))
-mu_18 = np.zeros((43,18))
-
-n = 0
-for i in range(nt_abunds):
-    for j in range(ncp[i]):
-        VMR[i,j,:] = VMR_1D[n,:]
-        n = n + 1
-
-n=0
-for i in range(1):
-    for j in range(15):
-        mu_15[i,j] = mu_1D[n]
-        n = n + 1 
-
-n=15
-for i in range(1):
-    for j in range(16):
-        mu_16[i,j] = mu_1D[n]
-        n = n + 1 
-
-n=31
-for i in range(15):
-    for j in range(17):
-        mu_17[i,j] = mu_1D[n]
-        n = n + 1 
-
-n=286
-for i in range(143):
-    for j in range(18):
-        try:
-            mu_18[i,j] = mu_1D[n]
-            n = n + 1
-        except IndexError:
-            break
         
 # Create a linear regression function for mu
 X = df[['temperature','pressure']]
-Y = df['mu(amu)'].values
+Y = df['mu']
 regr = linear_model.LinearRegression()
 regr.fit(X, Y)
-
-'''
-# Create a scipy interpolation function for mu
-f_mu_15 = interpolate.interp2d(T_filtered[0], P_filtered[0:15], mu_15, kind='linear')
-f_mu_16 = interpolate.interp2d(T_filtered[1], P_filtered[0:16], mu_16, kind='linear')
-f_mu_17 = interpolate.interp2d(T_filtered[2:17], P_filtered[0:17], mu_17, kind='linear')
-f_mu_18 = interpolate.interp2d(T_filtered[17:], P_filtered[0:18], mu_18, kind='linear')
-'''
-
-# Create a scipy interpolation function for VMR of each species
-f_VMR = []
-for i in range(nspecies):
-    f_VMR.append(interpolate.interp2d(T_1D[::-1],P_1D[::-1],VMR[:,:,i], kind='linear'))
 
 # Now loop across the whole 1D profile and interpolate to each P-T point in the GCM
 mu_1D = np.zeros(ni)
@@ -145,25 +89,86 @@ VMR_1D = np.zeros((ni,nspecies))
 for n in range(ni):
     #regression for mu
     mu_1D[n] = regr.predict([[T[n],P[n]]])
-    '''
-    # interpolate mu with switches 
-    if T[n]<87.5:
-        mu_1D[n] = f_mu_15(T[n],P[n], mu_15, kind = 'linear')
-    elif 87.5 <= T[n] < 105:
-        mu_1D[n] = f_mu_16(T[n],P[n], mu_16, kind = 'linear')
-    elif 105 <= T[n] < 255:
-        mu_1D[n] = f_mu_17(T[n],P[n], mu_17, kind = 'linear')
-    else:
-        mu_1D[n] = f_mu_18(T[n],P[n], mu_18, kind = 'linear')
-    '''
-    # interpolate VMRs
-    for s in range(nspecies):
-        VMR_1D[n,s] = 10.0**f_VMR[s](T[n],P[n])
+
+def interpolate_abunds(Pp, Tp, ispecies, logabunds, P_abunds, T_abunds, Tinv, logP_abunds, ncp):
+    # Interpolates abundances similar to the way abundances are interpolated in the GCM
+    # Inputs:
+    # Float Pp:     Pressure, for which interpolation is desired, in mbar
+    # Float Tp:     Temperature, for which interpolation is desired, in mbar
+    # ispecies:     species index for which interpolation is desired
+    #               some popular species: 1=H2, 8=He, 9=H2O, 10=CH4, 11=CO, 12=NH3, 13=N2, 25=CO2, 26=HCN
+    # ndarray logabunds:
+    #               2D array containing the natural logarithm of the abundances.
+    # ndarray P_abunds:
+    #               2D array containing the pressures from the pressure-temperature grid in mbar
+    # ndarray T_abunds:
+    #               2D array containing the temperatures from the pressure-temperature grid in K
+    # ndarray Tinv:
+    #               2D array containing 1/T_abunds (for computational efficiency if looping over huge number of points)
+    # ndarray P_abunds:
+    #               2D array containing np.log(P_abunds) (for computational efficiency if looping over huge number of
+    #               points)
+    # list, tuple or ndarray ncp:
+    #               array containing number of pressure points for each temperature point. Has to be specified when
+    #               reading in the file. Value should be
+    #               ncp=[15,16,17,17,17,17,17,17,17,17,17,17,17,17,17,17,17,18,18,18,18,18,18,18,18,18,18,18,18,18,18,
+    #               18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18,18]
+
+    nt_abunds=logabunds.shape[0]
+    np_abunds=logabunds.shape[1]
+
+    # find P index
+    jlowP = np.searchsorted(P_abunds[-1, :], Pp) - 1
+
+    # print(P_abunds[-1,jlowP],sim.pc[k]*1e-2,P_abunds[-1,jlowP+1])
+
+    # find T index
+    jlowT = np.searchsorted(T_abunds[:, 0], Tp) - 1
+
+    # print(T_abunds[jlowT,-1],Tp,T_abunds[jlowT+1,-1])
+
+    # deal with P or T being out of range
+    if (Tp < T_abunds[0, 0]):
+        jlowT = 0
+        print('Warning: Temperature out of range... extrapolating.')
+    elif (Tp > T_abunds[-1, 0]):
+        jlowT = nt_abunds - 2
+        print('Warning: Temperature out of range... extrapolating.')
+    if Pp < P_abunds[-1, 0]:
+        jlowP = 0
+        print('Warning: pressure too low... extrapolating')
+    elif Pp > P_abunds[jlowT, ncp[jlowT] - 1]:
+        jlowP = np_abunds - 2
+        print('Warning: Layer %d pressure too high... extrapolating')
+
+    tt = (1 / Tp - Tinv[jlowT, jlowP]) / (Tinv[jlowT + 1, jlowP] - Tinv[jlowT, jlowP])
+    u = (np.log(Pp) - logP_abunds[jlowT, jlowP]) / (logP_abunds[jlowT, jlowP + 1] - logP_abunds[jlowT, jlowP])
+
+    logX = (1 - tt) * (1 - u) * logabunds[jlowT, jlowP, ispecies] \
+           + tt * (1 - u) * logabunds[jlowT + 1, jlowP, ispecies] \
+           + tt * u * logabunds[jlowT + 1, jlowP + 1, ispecies] \
+           + (1 - tt) * u * logabunds[jlowT, jlowP + 1, ispecies]
+
+    return np.exp(logX)
+
+logP_abunds=np.log(P_abunds)
+Tinv=1/T_abunds
+logabunds=np.log(abunds)
 
 # Select the species used in this profile - the order should match optools.nml  
 ispecies=[1,8,9,10,11,13,25] #1=H2, 8=He, 9=H2O, 10=CH4, 11=CO, 12=NH3, 13=N2, 25=CO2, 26=HCN
-speciesnames=['H$_2$','He','H$_2$O','CH$_4$','CO','N$_2$','CO$_2$']
-nsp = len(ispecies)
+# The species do not need to completely match the species/order in optools. H2, He, N2 are not in optools as they are not strong opacity sources
+speciesnames=['H2','He','H2O','CH4','CO','N2','CO2']
+nsp = len(ispecies) 
+
+X = np.zeros((ni, nsp))
+logP_abunds=np.log(P_abunds)
+Tinv=1/T_abunds
+logabunds=np.log(abunds)
+
+for j in range(nsp):
+    for k in range(ni):
+        X[k,j] = interpolate_abunds(P[k],T[k],ispecies[j],logabunds,P_abunds,T_abunds,Tinv,logP_abunds,ncp)
 
 # Create a .prf file
 head = open('../data/header.txt','r')
@@ -175,11 +180,11 @@ prf.write(lines[0])  # height, P, T, mu, VMR
 prf.write(lines[1])  # number of layers 
 prf.write(str(ni) + '\n')
 prf.write(lines[2])  # number and names of gases in the table (same order as VMR)
-for n in range(nsp):
-    prf.write(str(ispecies) + '\n')
+prf.write((str(nsp) + '\n'))
 for n in range(nsp):
     prf.write(speciesnames[n] + '\n')
 prf.write(lines[3])  # begiin profile 
 prf.write(lines[4])  # n_lay, PG, TG, mug, VMR(:)
+print(lines[4])
 for n in range(ni):
-        prf.write(str(n+1) + ' ' + str(P[n]) + ' ' + str(T[n]) + ' ' + str(mu_1D[n]) + ' ' + " ".join(str(l) for l in VMR_1D[n,:]) + '\n')
+        prf.write(str(n+1) + ' ' + str(P[n]) + ' ' + str(T[n]) + ' ' + str(mu_1D[n]) + ' ' + " ".join(str(l) for l in X[n,:]) + '\n')
