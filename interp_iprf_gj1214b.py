@@ -30,6 +30,7 @@ T_abunds=np.zeros((nt_abunds, np_abunds))
 # ........ Read in list of species from abundances file .........
 abundsfile=open('m+0.0_co1.0.data.11/full_abunds.txt','r')
 species=abundsfile.readline()
+species = species.strip('\n')
 species = species.split(' ')
 for i in range(nt_abunds):
     for j in range(ncp[i]):
@@ -83,7 +84,7 @@ Y = df['mu']
 regr = linear_model.LinearRegression()
 regr.fit(X, Y)
 
-# Now loop across the whole 1D profile and interpolate to each P-T point in the GCM
+# Now loop across the whole 1D profile for lin regression to each P-T point in the GCM
 mu_1D = np.zeros(ni)
 VMR_1D = np.zeros((ni,nspecies))
 for n in range(ni):
@@ -155,10 +156,11 @@ logP_abunds=np.log(P_abunds)
 Tinv=1/T_abunds
 logabunds=np.log(abunds)
 
-# Select the species used in this profile - the order should match optools.nml  
-ispecies=[1,8,9,10,11,13,25] #1=H2, 8=He, 9=H2O, 10=CH4, 11=CO, 12=NH3, 13=N2, 25=CO2, 26=HCN
+# Select the species used in this profile
+ispecies=np.arange(0,37) #1=H2, 8=He, 9=H2O, 10=CH4, 11=CO, 12=NH3, 13=N2, 25=CO2, 26=HCN
 # The species do not need to completely match the species/order in optools. H2, He, N2 are not in optools as they are not strong opacity sources
-speciesnames=['H2','He','H2O','CH4','CO','N2','CO2']
+speciesnames = species
+print('checking for all 37 species names: ', speciesnames)
 nsp = len(ispecies) 
 
 X = np.zeros((ni, nsp))
@@ -183,7 +185,7 @@ prf.write(lines[2])  # number and names of gases in the table (same order as VMR
 prf.write((str(nsp) + '\n'))
 for n in range(nsp):
     prf.write(speciesnames[n] + '\n')
-prf.write(lines[3])  # begiin profile 
+prf.write(lines[3])  # begin profile 
 prf.write(lines[4])  # n_lay, PG, TG, mug, VMR(:)
 print(lines[4])
 for n in range(ni):
