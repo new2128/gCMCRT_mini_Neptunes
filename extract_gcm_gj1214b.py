@@ -1,3 +1,5 @@
+# Code based from: Elsie Lee gCMCRT, Maria Steinrueck 
+
 import numpy as np
 import matplotlib.pylab as plt
 import scipy.io as sio
