@@ -231,3 +231,4 @@ for j in range(nlat):
             f.write(str(n+1) + ' ' + str(r0) + ' ' + str(nd[i,j,k]/1e6) + ' ' + '1.0' + '\n')
             n = n + 1
 f.close()
+
