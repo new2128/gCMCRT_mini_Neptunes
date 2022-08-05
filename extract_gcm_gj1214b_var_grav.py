@@ -118,6 +118,7 @@ ptfile = 'm+0.0_co1.0.data.11/cp_all'
 data = np.loadtxt(ptfile,skiprows=1)
 T_1D = data[:,0]
 P_1D = data[:,1]
+P_1D = P_1D * .001 # mbar to bar conversion
 mu_1D = data[:,2]
 
 # Create a dataframe from the temp, pressure, mu table
